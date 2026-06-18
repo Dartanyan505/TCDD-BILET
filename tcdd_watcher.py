@@ -923,7 +923,7 @@ def main() -> None:
     config_path = Path(args.config)
     if not config_path.exists():
         raise SystemExit(
-            f"Config file not found: {config_path}. Copy config.example.toml to config.toml first."
+            f"Config file not found: {config_path}. Create the file and try again."
         )
 
     config = load_config(config_path)

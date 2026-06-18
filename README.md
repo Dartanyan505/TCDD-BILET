@@ -86,13 +86,7 @@ Duraklatmak için `Durdur` butonunu kullanın.
 
 Aracı panel olmadan da çalıştırabilirsiniz.
 
-### 1. Örnek config oluştur
-
-```powershell
-Copy-Item config.example.toml config.toml
-```
-
-`config.toml` dosyasını düzenleyin.
+### 1. `config.toml` dosyasını düzenleyin
 
 Örnek alanlar:
 
@@ -182,7 +176,6 @@ Arama sonucu geldikten sonra proje şu filtreleri uygular:
 
 - `tcdd_ui.py`: Flask tabanlı web paneli
 - `tcdd_watcher.py`: çekirdek arama ve watcher mantığı
-- `config.example.toml`: örnek ayar dosyası
 - `config.toml`: sizin ayarlarınız
 - `TCDD_SITE_MAP.md`: TCDD sayfa davranışı ve gözlem notları
 
