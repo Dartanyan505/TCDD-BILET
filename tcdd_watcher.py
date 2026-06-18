@@ -5,6 +5,7 @@ import dataclasses
 import json
 import re
 import sys
+import threading
 import time
 import unicodedata
 import urllib.request
@@ -148,6 +149,16 @@ class TCDDHttpClient:
         }
 
 
+@dataclasses.dataclass
+class WatcherStatus:
+    running: bool = False
+    last_check_started: str = ""
+    last_check_finished: str = ""
+    last_error: str = ""
+    last_matches: list[dict[str, str]] = dataclasses.field(default_factory=list)
+    total_checks: int = 0
+
+
 def normalize_text(value: str) -> str:
     value = unicodedata.normalize("NFKC", value or "")
     return re.sub(r"\s+", " ", value).strip().casefold()
@@ -185,6 +196,48 @@ def load_config(path: Path) -> Config:
         )
     except KeyError as exc:
         raise SystemExit(f"Missing required config key: {exc.args[0]}") from exc
+
+
+def config_to_dict(config: Config) -> dict[str, Any]:
+    return {
+        "departure_station": config.departure_station,
+        "arrival_station": config.arrival_station,
+        "date": config.date.isoformat(),
+        "preferred_departure_time": config.preferred_departure_time,
+        "departure_time_from": config.departure_time_from,
+        "departure_time_to": config.departure_time_to,
+        "train_keyword": config.train_keyword,
+        "seat_class_keyword": config.seat_class_keyword,
+        "check_interval_seconds": config.check_interval_seconds,
+        "ntfy_topic": config.ntfy_topic,
+        "ntfy_server": config.ntfy_server,
+    }
+
+
+def save_config(path: Path, config: Config) -> None:
+    data = config_to_dict(config)
+    lines = [
+        f'departure_station = {json.dumps(data["departure_station"], ensure_ascii=False)}',
+        f'arrival_station = {json.dumps(data["arrival_station"], ensure_ascii=False)}',
+        f'date = "{data["date"]}"',
+        "",
+        "# Use either preferred_departure_time for an exact HH:MM match, or a range.",
+        f'preferred_departure_time = "{data["preferred_departure_time"]}"',
+        f'departure_time_from = "{data["departure_time_from"]}"',
+        f'departure_time_to = "{data["departure_time_to"]}"',
+        "",
+        "# Leave empty to accept any train/service or class text.",
+        f'train_keyword = {json.dumps(data["train_keyword"], ensure_ascii=False)}',
+        f'seat_class_keyword = {json.dumps(data["seat_class_keyword"], ensure_ascii=False)}',
+        "",
+        f'check_interval_seconds = {int(data["check_interval_seconds"])}',
+        "",
+        "# Optional phone push notification via ntfy.",
+        f'ntfy_topic = {json.dumps(data["ntfy_topic"], ensure_ascii=False)}',
+        f'ntfy_server = {json.dumps(data["ntfy_server"], ensure_ascii=False)}',
+        "",
+    ]
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def parse_hhmm(value: str) -> tuple[int, int] | None:
@@ -527,6 +580,17 @@ def station_sort_key(station: Station) -> tuple[int, int, int]:
     )
 
 
+def station_to_dict(station: Station) -> dict[str, Any]:
+    return {
+        "id": station.id,
+        "name": station.name,
+        "city": station.city,
+        "label": station.label,
+        "active": station.active,
+        "show_on_query": station.show_on_query,
+    }
+
+
 def build_availability_payload(config: Config, departure: Station, arrival: Station) -> dict[str, Any]:
     return {
         "searchRoutes": [
@@ -585,6 +649,33 @@ def format_candidate(candidate: Candidate) -> str:
     return "; ".join(details)
 
 
+def candidate_to_dict(candidate: Candidate) -> dict[str, str]:
+    return {
+        "departure_time": candidate.departure_time,
+        "train_name": candidate.train_name,
+        "class_name": candidate.class_name,
+        "availability": candidate.availability,
+        "raw_text": candidate.raw_text,
+        "formatted": format_candidate(candidate),
+    }
+
+
+def config_from_mapping(values: dict[str, Any]) -> Config:
+    return Config(
+        departure_station=str(values.get("departure_station", "")).strip(),
+        arrival_station=str(values.get("arrival_station", "")).strip(),
+        date=datetime.strptime(str(values.get("date", "")), "%Y-%m-%d").date(),
+        preferred_departure_time=str(values.get("preferred_departure_time", "")).strip(),
+        departure_time_from=str(values.get("departure_time_from", "")).strip(),
+        departure_time_to=str(values.get("departure_time_to", "")).strip(),
+        train_keyword=str(values.get("train_keyword", "")).strip(),
+        seat_class_keyword=str(values.get("seat_class_keyword", "")).strip(),
+        check_interval_seconds=max(1, int(values.get("check_interval_seconds", 300))),
+        ntfy_topic=str(values.get("ntfy_topic", "")).strip(),
+        ntfy_server=str(values.get("ntfy_server", "https://ntfy.sh")).strip() or "https://ntfy.sh",
+    )
+
+
 def send_ntfy_message(config: Config, title: str, message: str) -> None:
     if not config.ntfy_topic:
         return
@@ -618,6 +709,79 @@ def notify(candidate: Candidate, config: Config, dry_run: bool) -> None:
         send_ntfy_message(config, title, message)
     except Exception as exc:
         print(f"ntfy notification failed: {exc}", file=sys.stderr)
+
+
+class WatcherService:
+    def __init__(self) -> None:
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._lock = threading.Lock()
+        self._status = WatcherStatus()
+        self._config: Config | None = None
+        self._notified: set[str] = set()
+
+    def start(self, config: Config) -> None:
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                self._config = config
+                return
+            self._config = config
+            self._notified = set()
+            self._stop_event = threading.Event()
+            self._status = WatcherStatus(running=True)
+            self._thread = threading.Thread(target=self._run, name="tcdd-watcher", daemon=True)
+            self._thread.start()
+
+    def stop(self) -> None:
+        thread: threading.Thread | None
+        with self._lock:
+            thread = self._thread
+            self._stop_event.set()
+        if thread:
+            thread.join(timeout=2)
+        with self._lock:
+            self._status.running = False
+
+    def status_dict(self) -> dict[str, Any]:
+        with self._lock:
+            status = dataclasses.asdict(self._status)
+        return status
+
+    def _run(self) -> None:
+        client = TCDDHttpClient()
+        while not self._stop_event.is_set():
+            with self._lock:
+                config = self._config
+                self._status.running = True
+                self._status.total_checks += 1
+                self._status.last_check_started = datetime.now(ISTANBUL_TZ).isoformat(timespec="seconds")
+                self._status.last_error = ""
+            if config is None:
+                break
+            try:
+                matches = search_once(client, config, dry_run=False)
+                match_dicts = [candidate_to_dict(match) for match in matches]
+                with self._lock:
+                    self._status.last_matches = match_dicts
+                for match in matches:
+                    key = (
+                        f"{config.date.isoformat()}|{config.departure_station}|"
+                        f"{config.arrival_station}|{match.key}"
+                    )
+                    if key in self._notified:
+                        continue
+                    self._notified.add(key)
+                    notify(match, config, dry_run=False)
+            except Exception as exc:
+                with self._lock:
+                    self._status.last_error = str(exc)
+            finally:
+                with self._lock:
+                    self._status.last_check_finished = datetime.now(ISTANBUL_TZ).isoformat(timespec="seconds")
+            if self._stop_event.wait(config.check_interval_seconds):
+                break
+        with self._lock:
+            self._status.running = False
 
 
 def run(config: Config, once: bool, dry_run: bool) -> None:

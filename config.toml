@@ -4,7 +4,7 @@ date = "2026-06-20"
 
 # Use either preferred_departure_time for an exact HH:MM match, or a range.
 preferred_departure_time = ""
-departure_time_from = "18:00"
+departure_time_from = "19:00"
 departure_time_to = "21:00"
 
 # Leave empty to accept any train/service or class text.
@@ -13,5 +13,6 @@ seat_class_keyword = "Ekonomi"
 
 check_interval_seconds = 10
 
+# Optional phone push notification via ntfy.
 ntfy_topic = "umut-tcdd-bilet-12345"
 ntfy_server = "https://ntfy.sh"

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TCDD Bilet Watcher</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">TCDD Watcher</p>
+          <h1>Bilet arama ve bildirim paneli</h1>
+          <p class="subtle">
+            İstasyon verileri TCDD kaynaklarından okunur. Formu kaydet, tek seferlik arama yap,
+            sonra watcher'ı arka planda çalıştır.
+          </p>
+        </div>
+        <div class="status-card">
+          <div class="status-row">
+            <span>Durum</span>
+            <strong id="watcher-state">Durduruldu</strong>
+          </div>
+          <div class="status-row">
+            <span>Son kontrol</span>
+            <strong id="watcher-last-check">-</strong>
+          </div>
+          <div class="status-row">
+            <span>Toplam kontrol</span>
+            <strong id="watcher-total-checks">0</strong>
+          </div>
+          <div class="status-row error" id="watcher-error-row" hidden>
+            <span>Hata</span>
+            <strong id="watcher-error">-</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Arama ayarları</h2>
+            <p>Config dosyasına yazılır.</p>
+          </div>
+
+          <form id="config-form" class="form-grid" autocomplete="off">
+            <div class="field span-2 combobox" data-target="departure_station">
+              <label for="departure-search">Kalkış istasyonu</label>
+              <input id="departure-search" type="text" placeholder="İstasyon ara" />
+              <input id="departure_station" name="departure_station" type="hidden" />
+              <div class="dropdown" id="departure-dropdown"></div>
+            </div>
+
+            <div class="field span-2 combobox" data-target="arrival_station">
+              <label for="arrival-search">Varış istasyonu</label>
+              <input id="arrival-search" type="text" placeholder="İstasyon ara" />
+              <input id="arrival_station" name="arrival_station" type="hidden" />
+              <div class="dropdown" id="arrival-dropdown"></div>
+            </div>
+
+            <div class="field">
+              <label for="date">Tarih</label>
+              <input id="date" name="date" type="date" required />
+            </div>
+
+            <div class="field">
+              <label for="preferred_departure_time">Net saat</label>
+              <input id="preferred_departure_time" name="preferred_departure_time" type="time" />
+            </div>
+
+            <div class="field">
+              <label for="departure_time_from">Saat aralığı başlangıç</label>
+              <input id="departure_time_from" name="departure_time_from" type="time" />
+            </div>
+
+            <div class="field">
+              <label for="departure_time_to">Saat aralığı bitiş</label>
+              <input id="departure_time_to" name="departure_time_to" type="time" />
+            </div>
+
+            <div class="field">
+              <label for="train_keyword">Tren anahtar kelimesi</label>
+              <input id="train_keyword" name="train_keyword" type="text" placeholder="YHT" />
+            </div>
+
+            <div class="field">
+              <label for="seat_class_keyword">Sınıf anahtar kelimesi</label>
+              <input id="seat_class_keyword" name="seat_class_keyword" type="text" placeholder="Ekonomi" />
+            </div>
+
+            <div class="field">
+              <label for="check_interval_seconds">Kontrol aralığı</label>
+              <input id="check_interval_seconds" name="check_interval_seconds" type="number" min="1" step="1" />
+            </div>
+
+            <div class="field span-2">
+              <label for="ntfy_topic">ntfy topic</label>
+              <input id="ntfy_topic" name="ntfy_topic" type="text" placeholder="umut-tcdd-bilet-12345" />
+            </div>
+
+            <div class="field span-2">
+              <label for="ntfy_server">ntfy server</label>
+              <input id="ntfy_server" name="ntfy_server" type="text" placeholder="https://ntfy.sh" />
+            </div>
+
+            <div class="actions span-2">
+              <button type="button" class="button primary" id="save-config">Kaydet</button>
+              <button type="button" class="button" id="search-once">Tek seferlik ara</button>
+              <button type="button" class="button primary" id="start-watcher">Watcher başlat</button>
+              <button type="button" class="button danger" id="stop-watcher">Watcher durdur</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Sonuçlar</h2>
+            <p>Tek seferlik arama veya arka plan watcher durumundan güncellenir.</p>
+          </div>
+
+          <div class="meta-grid">
+            <div class="meta-box">
+              <span>Ham aday</span>
+              <strong id="raw-candidate-count">0</strong>
+            </div>
+            <div class="meta-box">
+              <span>Eşleşme</span>
+              <strong id="match-count">0</strong>
+            </div>
+          </div>
+
+          <pre class="diagnostics" id="diagnostics">Hazır.</pre>
+          <div class="results" id="results"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
