@@ -9,6 +9,7 @@ from typing import Any
 from flask import Flask, jsonify, render_template, request
 
 from tcdd_watcher import (
+    Config,
     TCDDHttpClient,
     WatcherService,
     candidate_to_dict,
@@ -168,7 +169,13 @@ def api_logs() -> Any:
 def api_ntfy_test() -> Any:
     try:
         payload = request.get_json(force=True) or {}
-        config = config_from_mapping(payload)
+        config = Config(
+            departure_station="",
+            arrival_station="",
+            date=datetime.now(ISTANBUL_TZ).date(),
+            ntfy_topic=str(payload.get("ntfy_topic", "")).strip(),
+            ntfy_server=str(payload.get("ntfy_server", "https://ntfy.sh")).strip() or "https://ntfy.sh",
+        )
         title = "TCDD test bildirimi"
         message = "Bu bir test bildirimidir."
         send_ntfy_message(config, title, message)
