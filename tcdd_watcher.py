@@ -13,7 +13,7 @@ from datetime import date as Date
 from datetime import datetime, time as Time
 from datetime import timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from curl_cffi import requests
@@ -701,7 +701,7 @@ def notify(candidate: Candidate, config: Config, dry_run: bool) -> None:
         f"{config.departure_station} -> {config.arrival_station} "
         f"{config.date.isoformat()} {format_candidate(candidate)}"
     )
-    print(f"[YENİ] {title}: {message}", flush=True)
+    print(f"[FOUND] {title}: {message}", flush=True)
     if dry_run:
         return
 
@@ -712,18 +712,20 @@ def notify(candidate: Candidate, config: Config, dry_run: bool) -> None:
 
 
 class WatcherService:
-    def __init__(self) -> None:
+    def __init__(self, log_callback: Callable[[str, str], None] | None = None) -> None:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._status = WatcherStatus()
         self._config: Config | None = None
         self._notified: set[str] = set()
+        self._log_callback = log_callback
 
     def start(self, config: Config) -> None:
         with self._lock:
             if self._thread and self._thread.is_alive():
                 self._config = config
+                self._log("Watcher config güncellendi.")
                 return
             self._config = config
             self._notified = set()
@@ -731,6 +733,7 @@ class WatcherService:
             self._status = WatcherStatus(running=True)
             self._thread = threading.Thread(target=self._run, name="tcdd-watcher", daemon=True)
             self._thread.start()
+            self._log("Watcher thread başlatıldı.")
 
     def stop(self) -> None:
         thread: threading.Thread | None
@@ -741,6 +744,7 @@ class WatcherService:
             thread.join(timeout=2)
         with self._lock:
             self._status.running = False
+        self._log("Watcher thread durduruldu.")
 
     def status_dict(self) -> dict[str, Any]:
         with self._lock:
@@ -759,10 +763,12 @@ class WatcherService:
             if config is None:
                 break
             try:
+                self._log(f"Kontrol başladı: {config.departure_station} -> {config.arrival_station}")
                 matches = search_once(client, config, dry_run=False)
                 match_dicts = [candidate_to_dict(match) for match in matches]
                 with self._lock:
                     self._status.last_matches = match_dicts
+                self._log(f"Kontrol tamamlandı. Eşleşme: {len(matches)}")
                 for match in matches:
                     key = (
                         f"{config.date.isoformat()}|{config.departure_station}|"
@@ -771,10 +777,12 @@ class WatcherService:
                     if key in self._notified:
                         continue
                     self._notified.add(key)
+                    self._log(f"Yeni uygun sefer: {format_candidate(match)}", "success")
                     notify(match, config, dry_run=False)
             except Exception as exc:
                 with self._lock:
                     self._status.last_error = str(exc)
+                self._log(f"Kontrol hata verdi: {exc}", "error")
             finally:
                 with self._lock:
                     self._status.last_check_finished = datetime.now(ISTANBUL_TZ).isoformat(timespec="seconds")
@@ -782,6 +790,10 @@ class WatcherService:
                 break
         with self._lock:
             self._status.running = False
+
+    def _log(self, message: str, level: str = "info") -> None:
+        if self._log_callback:
+            self._log_callback(message, level)
 
 
 def run(config: Config, once: bool, dry_run: bool) -> None:

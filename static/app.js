@@ -1,85 +1,145 @@
 const state = {
-  stations: [],
   config: null,
+  stations: [],
+  selected: {
+    departure: null,
+    arrival: null,
+  },
+  loading: false,
 };
 
-const form = document.getElementById("config-form");
-const resultsEl = document.getElementById("results");
-const diagnosticsEl = document.getElementById("diagnostics");
-const rawCandidateCountEl = document.getElementById("raw-candidate-count");
-const matchCountEl = document.getElementById("match-count");
-const watcherStateEl = document.getElementById("watcher-state");
-const watcherLastCheckEl = document.getElementById("watcher-last-check");
-const watcherTotalChecksEl = document.getElementById("watcher-total-checks");
-const watcherErrorEl = document.getElementById("watcher-error");
-const watcherErrorRowEl = document.getElementById("watcher-error-row");
+const $ = (selector) => document.querySelector(selector);
+
+const elements = {
+  form: $("#config-form"),
+  alert: $("#global-alert"),
+  diagnostics: $("#diagnostics"),
+  logConsole: $("#log-console"),
+  results: $("#results"),
+  rawCandidateCount: $("#raw-candidate-count"),
+  matchCount: $("#match-count"),
+  latestMatch: $("#latest-match"),
+  watcherDot: $("#watcher-dot"),
+  watcherState: $("#watcher-state"),
+  watcherLastCheck: $("#watcher-last-check"),
+  watcherTotalChecks: $("#watcher-total-checks"),
+  notificationResult: $("#notification-result"),
+  routeDepartureSummary: $("#route-departure-summary"),
+  routeArrivalSummary: $("#route-arrival-summary"),
+};
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options,
   });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `${response.status} ${response.statusText}`);
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json") ? await response.json() : await response.text();
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || payload.message || `${response.status} ${response.statusText}`);
   }
-  return response.json();
+  return payload;
 }
 
 function formData() {
-  const data = Object.fromEntries(new FormData(form).entries());
+  const data = Object.fromEntries(new FormData(elements.form).entries());
   data.check_interval_seconds = Number(data.check_interval_seconds || 0);
   return data;
+}
+
+function setLoading(isLoading, label = "İşlem sürüyor...") {
+  state.loading = isLoading;
+  document.querySelectorAll("button").forEach((button) => {
+    button.disabled = isLoading;
+  });
+  if (isLoading) showAlert(label, "info");
+}
+
+function showAlert(message, level = "info") {
+  elements.alert.hidden = false;
+  elements.alert.textContent = message;
+  elements.alert.dataset.level = level;
+  if (level !== "error") {
+    window.clearTimeout(showAlert.timer);
+    showAlert.timer = window.setTimeout(() => {
+      elements.alert.hidden = true;
+    }, 3500);
+  }
 }
 
 function setFormValues(config) {
   state.config = config;
   for (const [key, value] of Object.entries(config)) {
-    const element = form.elements.namedItem(key);
-    if (element) {
-      element.value = value ?? "";
-    }
+    const field = elements.form.elements.namedItem(key);
+    if (field) field.value = value ?? "";
   }
-  bindStationValue("departure", config.departure_station || "");
-  bindStationValue("arrival", config.arrival_station || "");
+  selectStation("departure", findStation(config.departure_station), config.departure_station || "");
+  selectStation("arrival", findStation(config.arrival_station), config.arrival_station || "");
 }
 
-function bindStationValue(prefix, value) {
-  const searchInput = document.getElementById(`${prefix}-search`);
+function findStation(name) {
+  if (!name) return null;
+  const key = normalize(name);
+  return state.stations.find((station) => normalize(station.name) === key) || null;
+}
+
+function normalize(value) {
+  return (value || "")
+    .toLocaleLowerCase("tr-TR")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/ı/g, "i")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function selectStation(prefix, station, fallback = "") {
   const hiddenInput = document.getElementById(`${prefix}_station`);
-  hiddenInput.value = value;
-  searchInput.value = value;
+  const searchInput = document.getElementById(`${prefix}-search`);
+  state.selected[prefix] = station;
+  hiddenInput.value = station ? station.name : fallback;
+  searchInput.value = station ? station.label : fallback;
+  updateRouteSummary();
 }
 
-function renderResults(matches) {
-  resultsEl.innerHTML = "";
+function updateRouteSummary() {
+  elements.routeDepartureSummary.textContent =
+    state.selected.departure?.label || elements.form.elements.departure_station.value || "-";
+  elements.routeArrivalSummary.textContent =
+    state.selected.arrival?.label || elements.form.elements.arrival_station.value || "-";
+}
+
+function renderResults(matches = []) {
+  elements.results.innerHTML = "";
+  elements.matchCount.textContent = String(matches.length);
+  elements.latestMatch.textContent = matches[0]?.departure_time || "-";
+
   if (!matches.length) {
     const empty = document.createElement("div");
-    empty.className = "result-item";
-    empty.textContent = "Uygun sefer bulunmadi.";
-    resultsEl.appendChild(empty);
+    empty.className = "empty-state";
+    empty.textContent = "Uygun sefer bulunamadı.";
+    elements.results.appendChild(empty);
     return;
   }
 
   for (const match of matches) {
-    const item = document.createElement("article");
-    item.className = "result-item";
-    item.innerHTML = `
-      <div class="result-head">
-        <div class="result-time">${match.departure_time || "-"}</div>
-        <div>${match.availability || "-"}</div>
+    const card = document.createElement("article");
+    card.className = "result-card";
+    card.innerHTML = `
+      <div class="result-time">${escapeHtml(match.departure_time || "-")}</div>
+      <div class="result-main">
+        <strong>${escapeHtml(match.train_name || "Bilinmeyen tren")}</strong>
+        <span>${escapeHtml(match.class_name || "-")}</span>
+        <small>${escapeHtml(match.reason || "")}</small>
       </div>
-      <div class="result-meta"><strong>${escapeHtml(match.train_name || "Bilinmiyor")}</strong></div>
-      <div class="result-meta">${escapeHtml(match.class_name || "-")}</div>
+      <div class="availability">${escapeHtml(match.availability || "-")}</div>
     `;
-    resultsEl.appendChild(item);
+    elements.results.appendChild(card);
   }
 }
 
 function renderDiagnostics(payload) {
-  rawCandidateCountEl.textContent = String(payload.raw_candidate_count ?? 0);
-  matchCountEl.textContent = String((payload.matches || []).length);
-  diagnosticsEl.textContent = JSON.stringify(
+  elements.rawCandidateCount.textContent = String(payload.raw_candidate_count ?? 0);
+  elements.diagnostics.textContent = JSON.stringify(
     {
       filter_rejections: payload.filter_rejections,
       first_candidates: payload.first_candidates,
@@ -89,8 +149,37 @@ function renderDiagnostics(payload) {
   );
 }
 
+function renderLogs(logs = []) {
+  if (!logs.length) {
+    elements.logConsole.textContent = "Log bekleniyor.";
+    return;
+  }
+  elements.logConsole.innerHTML = logs
+    .map(
+      (entry) => `
+        <div class="log-line" data-level="${escapeHtml(entry.level || "info")}">
+          <span>${escapeHtml(entry.time || "--:--:--")}</span>
+          <strong>${escapeHtml(entry.level || "info")}</strong>
+          <p>${escapeHtml(entry.message || "")}</p>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function updateWatcherStatus(status) {
+  const running = Boolean(status.running);
+  elements.watcherDot.dataset.running = running ? "true" : "false";
+  elements.watcherState.textContent = running ? "Çalışıyor" : "Durduruldu";
+  elements.watcherLastCheck.textContent = status.last_check_finished || status.last_check_started || "-";
+  elements.watcherTotalChecks.textContent = String(status.total_checks || 0);
+
+  if (status.last_error) showAlert(status.last_error, "error");
+  if ((status.last_matches || []).length) renderResults(status.last_matches);
+}
+
 function escapeHtml(value) {
-  return value
+  return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -98,68 +187,151 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function updateWatcherStatus(status) {
-  watcherStateEl.textContent = status.running ? "Calisiyor" : "Durduruldu";
-  watcherLastCheckEl.textContent = status.last_check_finished || status.last_check_started || "-";
-  watcherTotalChecksEl.textContent = String(status.total_checks || 0);
-  if (status.last_error) {
-    watcherErrorEl.textContent = status.last_error;
-    watcherErrorRowEl.hidden = false;
-  } else {
-    watcherErrorEl.textContent = "-";
-    watcherErrorRowEl.hidden = true;
-  }
-  if ((status.last_matches || []).length) {
-    renderResults(status.last_matches);
-    matchCountEl.textContent = String(status.last_matches.length);
-  }
-}
-
 function setupCombobox(prefix) {
   const wrapper = document.querySelector(`.combobox[data-target="${prefix}_station"]`);
   const searchInput = document.getElementById(`${prefix}-search`);
   const hiddenInput = document.getElementById(`${prefix}_station`);
   const dropdown = document.getElementById(`${prefix}-dropdown`);
+  let activeIndex = -1;
+  let options = [];
+
+  function filterOptions(query = "") {
+    const queryKey = normalize(query);
+    return state.stations
+      .filter((station) => !queryKey || normalize(station.label).includes(queryKey))
+      .slice(0, 50);
+  }
 
   function renderOptions(query = "") {
-    const normalized = query.trim().toLocaleLowerCase("tr-TR");
-    const options = state.stations
-      .filter((station) => {
-        if (!normalized) return true;
-        return station.label.toLocaleLowerCase("tr-TR").includes(normalized);
-      })
-      .slice(0, 40);
-
+    options = filterOptions(query);
+    activeIndex = options.length ? 0 : -1;
     dropdown.innerHTML = "";
-    for (const station of options) {
+
+    for (const [index, station] of options.entries()) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "dropdown-item";
-      button.textContent = station.label;
+      button.className = `dropdown-item${index === activeIndex ? " active" : ""}`;
+      button.setAttribute("role", "option");
+      button.innerHTML = `
+        <strong>${escapeHtml(station.name)}</strong>
+        <span>${escapeHtml(station.city || "TCDD")}</span>
+      `;
+      button.addEventListener("mousedown", (event) => event.preventDefault());
       button.addEventListener("click", () => {
-        hiddenInput.value = station.name;
-        searchInput.value = station.label;
-        wrapper.classList.remove("open");
+        selectStation(prefix, station);
+        closeDropdown();
       });
       dropdown.appendChild(button);
     }
+
+    if (!options.length) {
+      dropdown.innerHTML = `<div class="dropdown-empty">Sonuç yok</div>`;
+    }
   }
 
-  searchInput.addEventListener("focus", () => {
+  function openDropdown() {
     wrapper.classList.add("open");
     renderOptions(searchInput.value);
+  }
+
+  function closeDropdown() {
+    wrapper.classList.remove("open");
+  }
+
+  function updateActive() {
+    dropdown.querySelectorAll(".dropdown-item").forEach((item, index) => {
+      item.classList.toggle("active", index === activeIndex);
+    });
+  }
+
+  searchInput.addEventListener("focus", openDropdown);
+  searchInput.addEventListener("input", () => {
+    hiddenInput.value = searchInput.value;
+    state.selected[prefix] = null;
+    updateRouteSummary();
+    openDropdown();
   });
 
-  searchInput.addEventListener("input", () => {
-    wrapper.classList.add("open");
-    renderOptions(searchInput.value);
-    hiddenInput.value = searchInput.value;
+  searchInput.addEventListener("keydown", (event) => {
+    if (!wrapper.classList.contains("open") && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+      openDropdown();
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      activeIndex = Math.min(activeIndex + 1, options.length - 1);
+      updateActive();
+      event.preventDefault();
+    } else if (event.key === "ArrowUp") {
+      activeIndex = Math.max(activeIndex - 1, 0);
+      updateActive();
+      event.preventDefault();
+    } else if (event.key === "Enter" && activeIndex >= 0 && options[activeIndex]) {
+      selectStation(prefix, options[activeIndex]);
+      closeDropdown();
+      event.preventDefault();
+    } else if (event.key === "Escape") {
+      closeDropdown();
+    }
   });
 
   document.addEventListener("click", (event) => {
-    if (!wrapper.contains(event.target)) {
-      wrapper.classList.remove("open");
-    }
+    if (!wrapper.contains(event.target)) closeDropdown();
+  });
+}
+
+async function refreshWatcherStatus() {
+  const payload = await api("/api/watcher/status");
+  updateWatcherStatus(payload.status);
+}
+
+async function refreshLogs() {
+  const payload = await api("/api/logs");
+  renderLogs(payload.logs || []);
+}
+
+async function runAction(button, label, action) {
+  try {
+    setLoading(true, label);
+    const payload = await action();
+    showAlert(payload.message || "İşlem tamamlandı.", "success");
+    return payload;
+  } catch (error) {
+    showAlert(error.message, "error");
+    return null;
+  } finally {
+    setLoading(false);
+    await refreshWatcherStatus().catch(() => {});
+    await refreshLogs().catch(() => {});
+  }
+}
+
+function localDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function setupQuickControls() {
+  document.querySelectorAll("[data-date-offset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const date = new Date();
+      date.setDate(date.getDate() + Number(button.dataset.dateOffset || 0));
+      elements.form.elements.date.value = localDateValue(date);
+    });
+  });
+
+  document.querySelector("[data-time-preset='evening']").addEventListener("click", () => {
+    elements.form.elements.preferred_departure_time.value = "";
+    elements.form.elements.departure_time_from.value = "18:00";
+    elements.form.elements.departure_time_to.value = "21:00";
+  });
+
+  document.querySelector("[data-time-preset='all']").addEventListener("click", () => {
+    elements.form.elements.preferred_departure_time.value = "";
+    elements.form.elements.departure_time_from.value = "";
+    elements.form.elements.departure_time_to.value = "";
   });
 }
 
@@ -167,56 +339,60 @@ async function loadInitialData() {
   const [config, stations] = await Promise.all([api("/api/config"), api("/api/stations")]);
   state.stations = stations;
   setFormValues(config);
+  renderResults([]);
 }
 
-async function refreshWatcherStatus() {
-  try {
-    const payload = await api("/api/watcher/status");
-    updateWatcherStatus(payload.status);
-  } catch (error) {
-    watcherErrorEl.textContent = error.message;
-    watcherErrorRowEl.hidden = false;
-  }
-}
+$("#save-config").addEventListener("click", (event) =>
+  runAction(event.currentTarget, "Config kaydediliyor...", async () =>
+    api("/api/config", { method: "POST", body: JSON.stringify(formData()) }),
+  ).then((payload) => {
+    if (payload) setFormValues(payload.config);
+  }),
+);
 
-document.getElementById("save-config").addEventListener("click", async () => {
-  const payload = await api("/api/config", {
-    method: "POST",
-    body: JSON.stringify(formData()),
-  });
-  setFormValues(payload.config);
-  diagnosticsEl.textContent = "Config kaydedildi.";
-});
+$("#search-once").addEventListener("click", (event) =>
+  runAction(event.currentTarget, "Arama yapılıyor...", async () =>
+    api("/api/search", { method: "POST", body: JSON.stringify(formData()) }),
+  ).then((payload) => {
+    if (!payload) return;
+    renderDiagnostics(payload);
+    renderResults(payload.matches || []);
+  }),
+);
 
-document.getElementById("search-once").addEventListener("click", async () => {
-  diagnosticsEl.textContent = "Araniyor...";
-  const payload = await api("/api/search", {
-    method: "POST",
-    body: JSON.stringify(formData()),
-  });
-  renderDiagnostics(payload);
-  renderResults(payload.matches || []);
-});
+$("#start-watcher").addEventListener("click", (event) =>
+  runAction(event.currentTarget, "Watcher başlatılıyor...", async () =>
+    api("/api/watcher/start", { method: "POST", body: JSON.stringify(formData()) }),
+  ),
+);
 
-document.getElementById("start-watcher").addEventListener("click", async () => {
-  const payload = await api("/api/watcher/start", {
-    method: "POST",
-    body: JSON.stringify(formData()),
-  });
-  updateWatcherStatus(payload.status);
-  diagnosticsEl.textContent = "Watcher baslatildi.";
-});
+$("#stop-watcher").addEventListener("click", (event) =>
+  runAction(event.currentTarget, "Watcher durduruluyor...", async () =>
+    api("/api/watcher/stop", { method: "POST", body: JSON.stringify({}) }),
+  ),
+);
 
-document.getElementById("stop-watcher").addEventListener("click", async () => {
-  const payload = await api("/api/watcher/stop", {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
-  updateWatcherStatus(payload.status);
-  diagnosticsEl.textContent = "Watcher durduruldu.";
+$("#test-ntfy").addEventListener("click", (event) =>
+  runAction(event.currentTarget, "ntfy test bildirimi gönderiliyor...", async () =>
+    api("/api/ntfy/test", { method: "POST", body: JSON.stringify(formData()) }),
+  ).then((payload) => {
+    if (!payload) return;
+    elements.notificationResult.textContent = payload.message || "Test bildirimi gönderildi.";
+  }),
+);
+
+$("#clear-log").addEventListener("click", () => {
+  elements.logConsole.textContent = "Log görünümü temizlendi. Yeni olaylar tekrar düşer.";
 });
 
 setupCombobox("departure");
 setupCombobox("arrival");
-loadInitialData().then(refreshWatcherStatus);
-setInterval(refreshWatcherStatus, 4000);
+setupQuickControls();
+loadInitialData()
+  .then(() => Promise.all([refreshWatcherStatus(), refreshLogs()]))
+  .catch((error) => showAlert(error.message, "error"));
+
+setInterval(() => {
+  refreshWatcherStatus().catch(() => {});
+  refreshLogs().catch(() => {});
+}, 4000);
