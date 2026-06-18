@@ -1,5 +1,7 @@
 # TCDD Bilet Takip
 
+> Not: Bu proje yapay zeka desteğiyle oluşturulmuş ve geliştirilmiştir.
+
 TCDD Taşımacılık e-bilet sisteminde belirli bir rota ve tarih için uygun trenleri takip eden küçük bir araç.
 
 Bu proje:
