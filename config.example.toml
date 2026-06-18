@@ -1,0 +1,20 @@
+# Copy this file to config.toml and edit the values.
+
+departure_station = "ANKARA GAR"
+arrival_station = "İSTANBUL(PENDİK)"
+date = "2026-06-17"
+
+# Use either preferred_departure_time for an exact HH:MM match, or a range.
+preferred_departure_time = ""
+departure_time_from = "06:00"
+departure_time_to = "12:00"
+
+# Leave empty to accept any train/service or class text.
+train_keyword = "YHT"
+seat_class_keyword = "Ekonomi"
+
+check_interval_seconds = 300
+
+# Optional phone push notification via ntfy.
+ntfy_topic = ""
+ntfy_server = "https://ntfy.sh"
