@@ -14,7 +14,7 @@ from datetime import datetime, time as Time
 from datetime import timezone
 from pathlib import Path
 from typing import Any, Callable
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from curl_cffi import requests
 
@@ -28,7 +28,13 @@ BASE_URL = "https://ebilet.tcddtasimacilik.gov.tr"
 TMS_API_URL = "https://web-api-prod-ytp.tcddtasimacilik.gov.tr/tms"
 STATIONS_URL = "https://cdn-api-prod-ytp.tcddtasimacilik.gov.tr/datas/stations.json"
 AVAILABILITY_URL = f"{TMS_API_URL}/train/train-availability?environment=dev&userId=1"
-ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
+try:
+    ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
+except ZoneInfoNotFoundError as exc:
+    raise SystemExit(
+        "Timezone database not found. Install dependencies again with "
+        "`pip install -r requirements.txt` or install `tzdata` manually."
+    ) from exc
 
 UNAVAILABLE_PATTERNS = (
     "dolu",

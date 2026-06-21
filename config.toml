@@ -1,11 +1,11 @@
 departure_station = "İSTANBUL(SÖĞÜTLÜÇEŞME)"
 arrival_station = "İZMİT YHT"
-date = "2026-06-20"
+date = "2026-06-25"
 
 # Use either preferred_departure_time for an exact HH:MM match, or a range.
-preferred_departure_time = ""
-departure_time_from = "19:00"
-departure_time_to = "21:00"
+preferred_departure_time = "19:40"
+departure_time_from = ""
+departure_time_to = ""
 
 # Leave empty to accept any train/service or class text.
 train_keyword = "YHT"

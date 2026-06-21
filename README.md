@@ -2,7 +2,7 @@
 
 > Not: Bu proje yapay zeka desteğiyle oluşturulmuş ve geliştirilmiştir.
 
-TCDD Taşımacılık e-bilet sisteminde belirli bir rota ve tarih için uygun trenleri takip eden küçük bir araç.
+TCDD Taşımacılık e-bilet sisteminde belirli bir rota ve tarih için uygun trenleri takip eden küçük bir terminal aracıdır.
 
 Bu proje:
 
@@ -10,7 +10,6 @@ Bu proje:
 - Saat, tren tipi ve sınıf filtresi uygular
 - Eşleşen sonuç çıkarsa terminale yazar
 - İsterseniz `ntfy` ile telefonunuza bildirim gönderir
-- İsterseniz tarayıcıdan kullanabileceğiniz basit bir kontrol paneli sunar
 
 Bu proje bilet satın almaz. Rezervasyon yapmaz. Koltuk seçmez. Giriş yapmaz. Ödeme otomasyonu yapmaz. Yalnızca arama ve bildirim için tasarlanmıştır.
 
@@ -22,7 +21,7 @@ Bu proje bilet satın almaz. Rezervasyon yapmaz. Koltuk seçmez. Giriş yapmaz. 
 
 ## Kurulum
 
-Depoyu indirdikten sonra proje klasöründe:
+Proje klasöründe:
 
 ```powershell
 python -m venv .venv
@@ -30,65 +29,17 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## Hızlı Başlangıç
-
-### 1. Web panelini aç
+Windows'ta zaman dilimi verisi eksikse ayrıca şu komut da çalıştırılabilir:
 
 ```powershell
-python tcdd_ui.py
+pip install tzdata
 ```
 
-Tarayıcıda açın:
+## Kullanım
 
-```text
-http://127.0.0.1:5000/
-```
+Önce [config.toml](C:/Users/Umut/Desktop/TCDD-BILET/config.toml) dosyasını düzenleyin.
 
-Panel üzerinden:
-
-- kalkış istasyonu
-- varış istasyonu
-- tarih
-- net saat veya saat aralığı
-- tren tipi filtresi
-- sınıf filtresi
-- kontrol aralığı
-- `ntfy` ayarları
-
-girilebilir.
-
-İstasyon listesi TCDD verisinden çekilir. Arama kutularında yazarak istasyon seçilebilir.
-
-### 2. Tek sefer arama yap
-
-Panelde `Tek sefer ara` butonuna basın.
-
-Sonuçlar sağ tarafta görünür:
-
-- kalkış saati
-- tren adı
-- sınıf
-- müsaitlik bilgisi
-
-### 3. Sürekli takibi başlat
-
-Panelde `Başlat` butonuna basın.
-
-Watcher belirlediğiniz aralıkla tekrar tekrar arama yapar. Eşleşen uygun sonuç bulursa:
-
-- panelde sonucu gösterir
-- terminale yazar
-- `ntfy` ayarlıysa telefona bildirim gönderir
-
-Duraklatmak için `Durdur` butonunu kullanın.
-
-## Komut Satırından Kullanma
-
-Aracı panel olmadan da çalıştırabilirsiniz.
-
-### 1. `config.toml` dosyasını düzenleyin
-
-Örnek alanlar:
+Başlıca alanlar:
 
 - `departure_station`: kalkış istasyonu
 - `arrival_station`: varış istasyonu
@@ -101,54 +52,41 @@ Aracı panel olmadan da çalıştırabilirsiniz.
 - `ntfy_topic`: telefon bildirimi için konu adı
 - `ntfy_server`: genelde `https://ntfy.sh`
 
-### 2. Tek sefer çalıştır
+Tek sefer arama:
 
 ```powershell
 python tcdd_watcher.py --config config.toml --once
 ```
 
-### 3. Sürekli çalıştır
+Sürekli izleme:
 
 ```powershell
 python tcdd_watcher.py --config config.toml
 ```
 
-### 4. Bildirim göndermeden test et
+Bildirim göndermeden test:
 
 ```powershell
 python tcdd_watcher.py --config config.toml --once --dry-run
 ```
 
+Eşleşme bulunduğunda araç:
+
+- terminale sonucu yazar
+- `ntfy` ayarlıysa bildirim gönderir
+
 ## `ntfy` ile Telefon Bildirimi
 
 Telefonunuza bildirim almak için `ntfy` kullanabilirsiniz.
 
-### 1. Telefona `ntfy` uygulamasını kurun
+Örnek ayar:
 
-- Android veya iPhone için `ntfy` uygulamasını yükleyin
-
-### 2. Bir topic belirleyin
-
-Örnek:
-
-```text
-umut-tcdd-bilet-12345
-```
-
-### 3. Uygulamada bu topic'e abone olun
-
-### 4. Panelde veya `config.toml` içinde şu alanları doldurun
-
-```text
+```toml
 ntfy_topic = "umut-tcdd-bilet-12345"
 ntfy_server = "https://ntfy.sh"
 ```
 
-### 5. Test bildirimi gönderin
-
-Panelde `Test gönder` butonunu kullanabilirsiniz.
-
-PowerShell'den elle test etmek isterseniz:
+Elle test için:
 
 ```powershell
 Invoke-RestMethod `
@@ -157,66 +95,30 @@ Invoke-RestMethod `
   -Body "Merhaba"
 ```
 
-## Filtreleme Mantığı
-
-Arama sonucu geldikten sonra proje şu filtreleri uygular:
-
-- tarih
-- net saat veya saat aralığı
-- tren tipi anahtar kelimesi
-- sınıf anahtar kelimesi
-- müsaitlik durumu
-
-Örnek:
-
-- `train_keyword = "YHT"` ise yalnızca YHT geçen trenler kalır
-- `seat_class_keyword = "Ekonomi"` ise ekonomi sınıfı uygun olanlar kalır
-
 ## Dosyalar
 
-- `tcdd_ui.py`: Flask tabanlı web paneli
 - `tcdd_watcher.py`: çekirdek arama ve watcher mantığı
 - `config.toml`: sizin ayarlarınız
-- `TCDD_SITE_MAP.md`: TCDD sayfa davranışı ve gözlem notları
-
-## Bilinen Sınırlar
-
-- TCDD tarafındaki API veya sayfa davranışı değişirse araç güncelleme isteyebilir
-- Sonuç bilgisi tamamen TCDD tarafından dönen anlık veriye bağlıdır
-- `ntfy` kullanımı için internet bağlantısı gerekir
-- Bu araç TCDD hesabı ile işlem yapmaz
 
 ## Sorun Giderme
 
-### Panel açılmıyorsa
+İstasyon bulunamıyorsa:
 
-```powershell
-python tcdd_ui.py
-```
+- istasyon adını TCDD’de göründüğü gibi yazın
+- filtreleri sadeleştirip tekrar deneyin
 
-Sonra `http://127.0.0.1:5000/` adresini kontrol edin.
-
-### İstasyon listesi gelmiyorsa
-
-İnternet bağlantısını ve TCDD tarafına erişimi kontrol edin.
-
-### Bildirim gelmiyorsa
+Bildirim gelmiyorsa:
 
 - `ntfy_topic` boş olmasın
-- telefonda doğru topic'e abone olun
-- panelden `Test gönder` deneyin
-- `ntfy_server` değerinin doğru olduğunu kontrol edin
+- telefonda doğru topic’e abone olun
+- `ntfy_server` doğru olsun
 
-### Terminalde sonuç yok ama TCDD sitesinde var görünüyorsa
+Terminalde sonuç yoksa:
 
-Genelde sebep filtrelerin fazla dar olmasıdır:
+- saat aralığını genişletin
+- `train_keyword` filtresini boşaltın
+- `seat_class_keyword` filtresini boşaltın
 
-- saat aralığı
-- `train_keyword`
-- `seat_class_keyword`
-
-Önce filtreleri boşaltıp tekrar deneyin.
-
-## Lisans ve Kullanım
+## Kullanım Notu
 
 Bu repo kişisel takip amacıyla hazırlanmıştır. Kullanım sorumluluğu size aittir.
